@@ -14,7 +14,7 @@ Running a Terraria server typically requires using `tmux` or `screen` to access 
 
 TSW acts as a wrapper that:
 1. Spawns your server process
-2. Listens for SIGINT signals (Ctrl+C or systemd stop)
+2. Listens for SIGINT and SIGTERM signals (Ctrl+C or systemd stop)
 3. Sends configured commands to the server's stdin before shutdown
 4. Waits for the server to exit gracefully
 
@@ -52,7 +52,12 @@ WantedBy=multi-user.target
 
 ## Options
 
-- `--on-int-write <COMMAND>`: Command to write to the child process's stdin when SIGINT is received. Can be specified multiple times, and commands will be sent in order.
+- `--on-int-write <COMMAND>`: Command to write to the child process's stdin when SIGINT/SIGTERM is received. Can be specified multiple times, and commands will be sent in order with a 100ms delay between each command.
+
+## Limitations
+
+- **Command delay**: There is a fixed 100ms delay between sending commands to allow the server time to process each one. This may not be sufficient for servers with large save operations. If your server needs more time between commands, you may need to modify the source code.
+- **No command timeout**: If the server doesn't respond to commands (e.g., hangs), the wrapper will wait indefinitely for the child process to exit.
 
 ## Dependencies
 
