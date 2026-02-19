@@ -43,6 +43,7 @@ Type=simple
 User=terraria
 WorkingDirectory=/opt/terraria
 ExecStart=/usr/local/bin/tsw --on-int-write="save-all" --on-int-write="quit" TerrariaServer -config serverconfig.txt
+KillSignal=SIGTERM
 Restart=on-failure
 
 [Install]

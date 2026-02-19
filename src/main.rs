@@ -7,7 +7,6 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
-#[command(name = "tsw")]
 #[command(about = "Terraria Server Wrapper - A simple wrapper for interactive servers")]
 struct Args {
     /// Commands to write to child process on SIGINT (can be specified multiple times)
@@ -50,8 +49,9 @@ fn main() -> Result<()> {
     let shutdown_clone = shutdown.clone();
     let on_int_write = args.on_int_write.clone();
 
-    // Register signal handler
+    // Register signal handlers for both SIGINT and SIGTERM
     signal_hook::flag::register(signal_hook::consts::SIGINT, shutdown_clone.clone())?;
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown_clone.clone())?;
 
     // Monitor for shutdown signal
     let stdin_handle = std::thread::spawn(move || {
