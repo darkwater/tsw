@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
