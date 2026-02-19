@@ -2,14 +2,13 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
 #[command(about = "Terraria Server Wrapper - A simple wrapper for interactive servers")]
 struct Args {
-    /// Commands to write to child process on SIGINT (can be specified multiple times)
+    /// Commands to write to child process on SIGINT/SIGTERM (can be specified multiple times)
     #[arg(long = "on-int-write")]
     on_int_write: Vec<String>,
 
@@ -44,44 +43,64 @@ fn main() -> Result<()> {
 
     let child_stdin = child.stdin.take().context("Failed to get child stdin")?;
 
-    // Set up signal handling for SIGINT
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_clone = shutdown.clone();
+    // Set up signal handling with channel for immediate notification
+    let (signal_tx, signal_rx) = mpsc::channel();
     let on_int_write = args.on_int_write.clone();
 
     // Register signal handlers for both SIGINT and SIGTERM
-    signal_hook::flag::register(signal_hook::consts::SIGINT, shutdown_clone.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown_clone.clone())?;
+    // Use signal_hook's iterator API for better signaling
+    let mut signals = signal_hook::iterator::Signals::new([
+        signal_hook::consts::SIGINT,
+        signal_hook::consts::SIGTERM,
+    ])?;
 
-    // Monitor for shutdown signal
-    let stdin_handle = std::thread::spawn(move || {
-        let mut stdin = child_stdin;
-        while !shutdown_clone.load(Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-
-        // When SIGINT is received, send the on-int-write commands
-        info!("SIGINT received, sending commands to child process");
-        for cmd in &on_int_write {
-            info!("Writing command: {}", cmd);
-            if let Err(e) = writeln!(stdin, "{}", cmd) {
-                warn!("Failed to write command '{}': {}", cmd, e);
-            }
-            if let Err(e) = stdin.flush() {
-                warn!("Failed to flush stdin: {}", e);
-            }
-            // Give the child process time to process each command
-            std::thread::sleep(std::time::Duration::from_millis(100));
+    let signal_tx_clone = signal_tx.clone();
+    std::thread::spawn(move || {
+        if let Some(sig) = signals.forever().next() {
+            info!("Received signal: {}", sig);
+            let _ = signal_tx_clone.send(());
         }
     });
+
+    // Monitor for shutdown signal - only spawn if there are commands to send
+    let stdin_handle = if !on_int_write.is_empty() {
+        Some(std::thread::spawn(move || {
+            let mut stdin = child_stdin;
+
+            // Wait for shutdown signal
+            if signal_rx.recv().is_ok() {
+                // When signal is received, send the on-int-write commands
+                info!("Shutdown signal received, sending commands to child process");
+                for cmd in &on_int_write {
+                    info!("Writing command: {}", cmd);
+                    if let Err(e) = writeln!(stdin, "{}", cmd) {
+                        warn!("Failed to write command '{}': {}", cmd, e);
+                    }
+                    if let Err(e) = stdin.flush() {
+                        warn!("Failed to flush stdin: {}", e);
+                    }
+                    // Give the child process time to process each command
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        }))
+    } else {
+        None
+    };
 
     // Wait for the child process to exit
     let status = child.wait().context("Failed to wait for child process")?;
 
-    // Signal the monitoring thread to exit if it hasn't already
-    shutdown.store(true, Ordering::Relaxed);
-    // Wait for the monitoring thread to finish
-    let _ = stdin_handle.join();
+    // If monitoring thread exists, ensure it completes
+    if let Some(handle) = stdin_handle {
+        // Signal shutdown in case child exited before signal was received
+        let _ = signal_tx.send(());
+
+        // Wait for the monitoring thread to finish
+        if handle.join().is_err() {
+            warn!("Monitoring thread panicked while shutting down");
+        }
+    }
 
     info!("Child process exited with status: {}", status);
 
