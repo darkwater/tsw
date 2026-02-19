@@ -52,7 +52,13 @@ fn test_signal_handling() {
     println!("STDOUT:\n{}", stdout);
     println!("STDERR:\n{}", stderr);
 
-    // Verify that the commands were sent
-    assert!(stdout.contains("Received: save-all") || stderr.contains("save-all"));
-    assert!(stdout.contains("Received: quit") || stderr.contains("quit"));
+    // Verify that the commands were sent to stdout
+    assert!(
+        stdout.contains("Received: save-all"),
+        "Expected 'Received: save-all' in stdout"
+    );
+    assert!(
+        stdout.contains("Received: quit"),
+        "Expected 'Received: quit' in stdout"
+    );
 }

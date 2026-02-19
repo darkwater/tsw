@@ -78,8 +78,9 @@ fn main() -> Result<()> {
     // Wait for the child process to exit
     let status = child.wait().context("Failed to wait for child process")?;
 
-    // Clean up the stdin thread
+    // Signal the monitoring thread to exit if it hasn't already
     shutdown.store(true, Ordering::Relaxed);
+    // Wait for the monitoring thread to finish
     let _ = stdin_handle.join();
 
     info!("Child process exited with status: {}", status);
